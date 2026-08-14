@@ -15,7 +15,7 @@ from astrbot.api.all import MessageChain
 
 # 插件元数据
 PLUGIN_NAME = "astrbot_plugin_memo"
-PLUGIN_AUTHOR = "Administrator"
+PLUGIN_AUTHOR = "云晓"
 PLUGIN_DESC = "群聊备忘录与定时提醒"
 PLUGIN_VERSION = "1.0.0"
 

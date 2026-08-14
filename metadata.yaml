@@ -3,5 +3,5 @@ display_name: 群聊备忘录与定时提醒
 desc: 群聊/私聊备忘录与定时提醒：记录备忘、一次性/周期提醒
 help: 发送「/备忘 <内容>」记录备忘；「/备忘 列表」查看；「/备忘 删 <编号>」删除。发送「/提醒 HH:MM <内容>」一次性提醒；「/提醒 每天 HH:MM <内容>」每日提醒；「/提醒 每周 HH:MM <内容>」每周提醒；「/提醒 列表」「/提醒 删 <编号>」管理提醒
 version: 1.0.0
-author: Administrator
-repo: https://github.com/Administrator/astrbot_plugin_memo
+author: 云晓
+repo: https://github.com/yunxiao258/astrbot_plugin_memo
