@@ -1,0 +1,22 @@
+{
+  "check_interval": {
+    "description": "后台提醒检查间隔（秒），非法值回退默认 60",
+    "type": "int",
+    "default": 60
+  },
+  "max_memos": {
+    "description": "每个会话最大备忘条数，超限时自动丢弃最旧，非法值回退默认 100",
+    "type": "int",
+    "default": 100
+  },
+  "max_reminders": {
+    "description": "每个会话最大提醒条数，超限时拒绝新增，非法值回退默认 20",
+    "type": "int",
+    "default": 20
+  },
+  "timeout_warn_seconds": {
+    "description": "一次性提醒预设时间早于当前时间时的超时容忍秒数（超过则提示已过时），非法值回退默认 300",
+    "type": "int",
+    "default": 300
+  }
+}
