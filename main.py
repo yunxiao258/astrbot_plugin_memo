@@ -152,8 +152,13 @@ class MemoPlugin(Star):
 
     @staticmethod
     def _chain(text: str):
-        """构造纯文本消息链"""
+        """构造纯文本消息链（用于主动推送）"""
         return MessageChain([Plain(text)])
+
+    @staticmethod
+    def _reply(event: AstrMessageEvent, text: str):
+        """构造命令回复结果（MessageEventResult，框架要求）"""
+        return event.chain_result([Plain(text)])
 
     # ========== 备忘逻辑 ==========
 
@@ -352,9 +357,13 @@ class MemoPlugin(Star):
 
     # ========== 后台提醒循环 ==========
 
+    async def initialize(self) -> None:
+        """插件加载/重载时启动后台提醒任务"""
+        await self._start_reminder_loop()
+
     @filter.on_astrbot_loaded()
     async def _start_reminder_loop(self):
-        """AstrBot 加载完成后启动后台提醒任务（可安全取消）"""
+        """启动后台提醒任务（幂等：重复调用不会重复启动）"""
         if self._reminder_running:
             return
         self._reminder_running = True
@@ -384,10 +393,12 @@ class MemoPlugin(Star):
                 if not self._is_due(rem, now):
                     remain.append(rem)
                     continue
-                # 触发推送
+                # 触发推送；推送失败则不记账（下一轮重试）
                 rtype = rem.get("type")
                 text = self._render_reminder(rem)
-                await self._push(umo, text)
+                if not await self._push(umo, text):
+                    remain.append(rem)
+                    continue
                 pushed.append((umo, rem))
                 if rtype == TYPE_ONCE:
                     # 一次性提醒触发后即删除
@@ -417,14 +428,16 @@ class MemoPlugin(Star):
             return f"⏰ 每周{wname}提醒 {rem.get('hour', 0):02d}:{rem.get('minute', 0):02d}：{rem.get('content', '')}"
         return f"⏰ 提醒：{rem.get('content', '')}"
 
-    async def _push(self, umo: str, text: str):
-        """推送消息到指定会话（context 缺失时静默跳过，避免测试/异常崩溃）"""
+    async def _push(self, umo: str, text: str) -> bool:
+        """推送消息到指定会话；成功返回 True（context 缺失或失败返回 False，便于调用方重试）"""
         if not self.context:
-            return
+            return False
         try:
             await self.context.send_message(umo, self._chain(text))
+            return True
         except Exception as e:  # noqa: BLE001
             logger.warning(f"【{PLUGIN_NAME}】推送消息到 {umo} 失败: {e}")
+            return False
 
     # ========== 指令处理 ==========
 
@@ -436,23 +449,24 @@ class MemoPlugin(Star):
         rest = text[len("备忘"):].strip()
 
         if not rest:
-            return self._chain(
+            return self._reply(
+                event,
                 "使用方法：\n"
                 "/备忘 <内容>      记录一条备忘\n"
                 "/备忘 列表         查看当前会话备忘\n"
-                "/备忘 删 <编号>    删除指定编号备忘"
+                "/备忘 删 <编号>    删除指定编号备忘",
             )
         if rest == "列表":
-            return self._chain(self._render_memo_list(umo))
+            return self._reply(event, self._render_memo_list(umo))
         m = re.match(r"^删\s*(\d+)\s*$", rest)
         if m:
             mid = int(m.group(1))
             if self.delete_memo(umo, mid):
-                return self._chain(f"已删除备忘 #{mid}")
-            return self._chain(f"未找到备忘 #{mid}")
+                return self._reply(event, f"已删除备忘 #{mid}")
+            return self._reply(event, f"未找到备忘 #{mid}")
         # 新增备忘
         item = self.add_memo(umo, rest)
-        return self._chain(f"已记录备忘 #{item['id']}：{item['content']}")
+        return self._reply(event, f"已记录备忘 #{item['id']}：{item['content']}")
 
     def _render_memo_list(self, umo: str) -> str:
         """渲染当前会话备忘列表文案"""
@@ -472,37 +486,39 @@ class MemoPlugin(Star):
         rest = text[len("提醒"):].strip()
 
         if not rest:
-            return self._chain(
+            return self._reply(
+                event,
                 "使用方法：\n"
                 "/提醒 HH:MM <内容>          一次性提醒\n"
                 "/提醒 每天 HH:MM <内容>      每日提醒\n"
                 "/提醒 每周 HH:MM <内容>      每周提醒\n"
                 "/提醒 列表                   查看当前会话提醒\n"
-                "/提醒 删 <编号>              删除指定编号提醒"
+                "/提醒 删 <编号>              删除指定编号提醒",
             )
         if rest == "列表":
-            return self._chain(self._render_reminder_list(umo))
+            return self._reply(event, self._render_reminder_list(umo))
         m = re.match(r"^删\s*(\d+)\s*$", rest)
         if m:
             rid = int(m.group(1))
             if self.delete_reminder(umo, rid):
-                return self._chain(f"已删除提醒 #{rid}")
-            return self._chain(f"未找到提醒 #{rid}")
+                return self._reply(event, f"已删除提醒 #{rid}")
+            return self._reply(event, f"未找到提醒 #{rid}")
         # 解析新增
         parsed = self.parse_reminder(rest)
         if parsed is None:
-            return self._chain(
+            return self._reply(
+                event,
                 "格式无法解析。示例：\n"
                 "/提醒 18:30 下班打卡\n"
                 "/提醒 每天 09:00 晨会\n"
-                "/提醒 每周 18:00 周报提交"
+                "/提醒 每周 18:00 周报提交",
             )
         rtype, hour, minute, _weekday, content = parsed
         rem = self.add_reminder(umo, rtype, hour, minute, _weekday, content)
         if rem is None:
-            return self._chain(f"当前会话提醒数量已达上限（{self._max_reminders()}），请先删除部分提醒。")
+            return self._reply(event, f"当前会话提醒数量已达上限（{self._max_reminders()}），请先删除部分提醒。")
         label = self._reminder_label(rem)
-        return self._chain(f"已设置{label}提醒 #{rem['id']}：{rem['content']}")
+        return self._reply(event, f"已设置{label}提醒 #{rem['id']}：{rem['content']}")
 
     def _reminder_label(self, rem: dict) -> str:
         """根据提醒类型生成中文标签"""
