@@ -117,10 +117,13 @@ class MemoPlugin(Star):
         self._save_json(self._reminders_file(), self._reminders)
 
     def _save_json(self, path, data):
-        """保存 JSON 文件（写入失败不影响内存数据）"""
+        """保存 JSON 文件（临时文件 + 原子替换防损坏；写入失败不影响内存数据）"""
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, path)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"【{PLUGIN_NAME}】保存数据失败: {e}")
 
@@ -417,15 +420,17 @@ class MemoPlugin(Star):
     def _render_reminder(self, rem: dict) -> str:
         """生成提醒推送文案"""
         rtype = rem.get("type")
+        hour = _safe_int(rem.get("hour"), 0)
+        minute = _safe_int(rem.get("minute"), 0)
         if rtype == TYPE_ONCE:
             return f"⏰ 定时提醒（一次性）：{rem.get('content', '')}"
         if rtype == TYPE_DAILY:
-            return f"⏰ 每日提醒 {rem.get('hour', 0):02d}:{rem.get('minute', 0):02d}：{rem.get('content', '')}"
+            return f"⏰ 每日提醒 {hour:02d}:{minute:02d}：{rem.get('content', '')}"
         if rtype == TYPE_WEEKLY:
             wd = _safe_int(rem.get("weekday"), 0)
             names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
             wname = names[wd] if 0 <= wd < 7 else str(wd)
-            return f"⏰ 每周{wname}提醒 {rem.get('hour', 0):02d}:{rem.get('minute', 0):02d}：{rem.get('content', '')}"
+            return f"⏰ 每周{wname}提醒 {hour:02d}:{minute:02d}：{rem.get('content', '')}"
         return f"⏰ 提醒：{rem.get('content', '')}"
 
     async def _push(self, umo: str, text: str) -> bool:
@@ -523,7 +528,7 @@ class MemoPlugin(Star):
     def _reminder_label(self, rem: dict) -> str:
         """根据提醒类型生成中文标签"""
         rtype = rem.get("type")
-        hh = f"{rem.get('hour', 0):02d}:{rem.get('minute', 0):02d}"
+        hh = f"{_safe_int(rem.get('hour'), 0):02d}:{_safe_int(rem.get('minute'), 0):02d}"
         if rtype == TYPE_ONCE:
             return f"一次性（{hh}）"
         if rtype == TYPE_DAILY:
