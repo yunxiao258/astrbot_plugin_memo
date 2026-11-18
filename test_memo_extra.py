@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """astrbot_plugin_memo 新功能测试：生日（含农历）、倒计时、习惯打卡、稍后提醒"""
+import os
 import sys
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-sys.path.insert(0, r"D:\astrbot\data\plugins")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from astrbot_plugin_memo.main import (  # noqa: E402
     MemoPlugin,

@@ -17,7 +17,7 @@ from astrbot.api.all import MessageChain
 PLUGIN_NAME = "astrbot_plugin_memo"
 PLUGIN_AUTHOR = "云晓"
 PLUGIN_DESC = "群聊备忘录与定时提醒"
-PLUGIN_VERSION = "1.0.0"
+PLUGIN_VERSION = "1.1.0"
 
 # 时间解析正则：24 小时制 HH:MM
 # 一次性提醒：`HH:MM <内容>`
@@ -941,10 +941,13 @@ class MemoPlugin(Star):
         """插件加载/重载时启动后台提醒任务"""
         await self._start_reminder_loop()
 
-    @filter.on_astrbot_loaded()
     async def _start_reminder_loop(self):
         """启动后台提醒任务（幂等：重复调用不会重复启动）"""
         if self._reminder_running:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
             return
         self._reminder_running = True
         self._reminder_task = asyncio.create_task(self._reminder_loop())

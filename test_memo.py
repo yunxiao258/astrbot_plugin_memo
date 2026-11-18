@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """astrbot_plugin_memo 单元测试：备忘增删查、提醒解析、到期判断与去重、后台循环推送"""
+import os
 import sys
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-sys.path.insert(0, r"D:\astrbot\data\plugins")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from astrbot_plugin_memo.main import (  # noqa: E402
     MemoPlugin,
