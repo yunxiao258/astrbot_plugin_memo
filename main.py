@@ -17,7 +17,12 @@ from astrbot.api.all import MessageChain
 PLUGIN_NAME = "astrbot_plugin_memo"
 PLUGIN_AUTHOR = "云晓"
 PLUGIN_DESC = "群聊备忘录与定时提醒"
-PLUGIN_VERSION = "1.1.1"
+try:
+    from .hub_bridge import HUB_PROTOCOL_VERSION, emit_hub_event
+except ImportError:
+    from hub_bridge import HUB_PROTOCOL_VERSION, emit_hub_event
+
+PLUGIN_VERSION = "1.2.0"
 
 # 时间解析正则：24 小时制 HH:MM
 # 一次性提醒：`HH:MM <内容>`
@@ -188,6 +193,8 @@ def _valid_time(hour, minute):
 
 @register(PLUGIN_NAME, PLUGIN_AUTHOR, PLUGIN_DESC, PLUGIN_VERSION)
 class MemoPlugin(Star):
+    HUB_PROTOCOL_VERSION = HUB_PROTOCOL_VERSION
+
     """群聊备忘录与定时提醒插件"""
 
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -360,6 +367,8 @@ class MemoPlugin(Star):
         }
         items.append(item)
         self._save_memos()
+        if not getattr(self, "_suppress_hub_emit", False):
+            emit_hub_event(PLUGIN_NAME, "memo.added", {"umo": umo, "id": idx, "content": content}, self.context)
         return item
 
     def list_memos(self, umo: str) -> list[dict]:
@@ -783,6 +792,52 @@ class MemoPlugin(Star):
         }
         items.append(item)
         self._save_habits()
+
+    def hub_status(self) -> dict:
+        m_cnt = sum(len(v) for v in self._memos.values() if isinstance(v, list))
+        r_cnt = sum(len(v) for v in self._reminders.values() if isinstance(v, list))
+        b_cnt = sum(len(v) for v in self._birthdays.values() if isinstance(v, list))
+        h_cnt = sum(len(v) for v in self._habits.values() if isinstance(v, list))
+        return {
+            "version": PLUGIN_VERSION,
+            "status": "online",
+            "metrics": {"备忘": m_cnt, "提醒": r_cnt, "生日": b_cnt, "习惯": h_cnt},
+            "actions": ["list_data", "add_memo", "add_reminder"],
+        }
+
+    async def hub_action(self, action: str, params: dict | None = None) -> dict:
+        p = params or {}
+        if action == "list_data":
+            umo = str(p.get("umo", "")).strip()
+            if umo:
+                return {"ok": True, "data": {"memos": self.list_memos(umo), "reminders": self.list_reminders(umo), "habits": self.list_habits(umo)}}
+            return {"ok": True, "data": {"sessions": sorted(set(self._memos.keys()) | set(self._reminders.keys())), "memos_total": sum(len(v) for v in self._memos.values() if isinstance(v, list)), "reminders_total": sum(len(v) for v in self._reminders.values() if isinstance(v, list))}}
+        if action == "add_memo":
+            umo = str(p.get("umo", "")).strip()
+            content = str(p.get("content", "")).strip()
+            if not umo or not content:
+                return {"ok": False, "error": "缺少 umo 或 content"}
+            # 去重避免重复同步
+            for ex in self.list_memos(umo):
+                if ex.get("content") == content:
+                    return {"ok": True, "data": ex, "deduped": True}
+            self._suppress_hub_emit = bool(p.get("_hub_origin"))
+            try:
+                item = self.add_memo(umo, content)
+            finally:
+                self._suppress_hub_emit = False
+            return {"ok": True, "data": item}
+        if action == "add_reminder":
+            umo = str(p.get("umo", "")).strip()
+            spec = str(p.get("spec", "")).strip()
+            if not umo or not spec:
+                return {"ok": False, "error": "缺少 umo 或 spec"}
+            parsed, err = self.parse_reminder(spec)
+            if err or not parsed:
+                return {"ok": False, "error": err or "解析提醒失败"}
+            item = self.add_reminder(umo, parsed)
+            return {"ok": True, "data": item}
+        return {"ok": False, "error": f"不支持的动作：{action}"}
         return item
 
     def check_habit(self, umo: str, name: str) -> dict:
@@ -983,6 +1038,7 @@ class MemoPlugin(Star):
                     remain.append(rem)
                     continue
                 pushed.append((umo, rem))
+                emit_hub_event(PLUGIN_NAME, "memo.reminder_triggered", {"umo": umo, "content": rem.get("content", ""), "type": rtype}, self.context)
                 if rtype == TYPE_ONCE:
                     # 一次性提醒触发后即删除
                     continue

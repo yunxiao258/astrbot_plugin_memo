@@ -3,7 +3,7 @@
 AstrBot 群聊/私聊备忘录与定时提醒插件：记录备忘、一次性/周期定时提醒、生日提醒（含农历）、倒计时、习惯打卡与稍后提醒。群聊与私聊会话各自独立，互不影响。
 
 - 作者：云晓
-- 版本：1.1.1
+- 版本：1.2.0
 - 许可证：MIT（详见 LICENSE）
 
 ## 功能
@@ -172,6 +172,9 @@ python test_memo_extra.py
 ```
 
 ## 更新记录
+
+### v1.2.0
+- 接入插件生态中枢标准联动协议（`hub_status` / `hub_action` 与事件上报），支持自动接收 `chat_digest` 群聊待办同步写入备忘录
 
 ### v1.1.1
 - `_conf_schema.json` 补齐 v1.1.0 新功能配置项：`birthday_advance_days`（生日提前预告天数）、`countdown_push_time`（倒计时播报时间）、`habit_remind_enabled` / `habit_remind_time`（晚间未打卡提醒），现在可在 WebUI 插件配置页直接修改
