@@ -173,6 +173,9 @@ python test_memo_extra.py
 
 ## 更新记录
 
+### v1.2.1
+- 修复 `hub_action("add_reminder")` 解包 `parse_reminder` 5 元组导致 `ValueError` 崩溃的严重 bug，并补全提醒上限校验
+
 ### v1.2.0
 - 接入插件生态中枢标准联动协议（`hub_status` / `hub_action` 与事件上报），支持自动接收 `chat_digest` 群聊待办同步写入备忘录
 

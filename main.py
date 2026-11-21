@@ -22,7 +22,7 @@ try:
 except ImportError:
     from hub_bridge import HUB_PROTOCOL_VERSION, emit_hub_event
 
-PLUGIN_VERSION = "1.2.0"
+PLUGIN_VERSION = "1.2.1"
 
 # 时间解析正则：24 小时制 HH:MM
 # 一次性提醒：`HH:MM <内容>`
@@ -832,10 +832,13 @@ class MemoPlugin(Star):
             spec = str(p.get("spec", "")).strip()
             if not umo or not spec:
                 return {"ok": False, "error": "缺少 umo 或 spec"}
-            parsed, err = self.parse_reminder(spec)
-            if err or not parsed:
-                return {"ok": False, "error": err or "解析提醒失败"}
-            item = self.add_reminder(umo, parsed)
+            parsed = self.parse_reminder(spec)
+            if not parsed:
+                return {"ok": False, "error": "解析提醒格式失败（示例：每天 09:00 打卡）"}
+            rtype, hour, minute, weekday, content = parsed
+            item = self.add_reminder(umo, rtype, hour, minute, weekday, content)
+            if item is None:
+                return {"ok": False, "error": "当前会话提醒数量已达上限"}
             return {"ok": True, "data": item}
         return {"ok": False, "error": f"不支持的动作：{action}"}
         return item
@@ -1226,7 +1229,7 @@ class MemoPlugin(Star):
                 "/生日 小红 农历 八月十五",
             )
         name, month, day, lunar = parsed
-        item = self.add_birthday(umo, name, month, day, lunar)
+        self.add_birthday(umo, name, month, day, lunar)
         if lunar:
             label = f"农历{_lunar_month_name(month)}{day}日"
         else:
