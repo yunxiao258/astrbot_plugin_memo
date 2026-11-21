@@ -18,5 +18,25 @@
     "description": "一次性提醒预设时间早于当前时间时的超时容忍秒数（超过则提示已过时），非法值回退默认 300",
     "type": "int",
     "default": 300
+  },
+  "birthday_advance_days": {
+    "description": "生日提前预告天数（0 表示仅当天祝福），非法值回退默认 1",
+    "type": "int",
+    "default": 1
+  },
+  "countdown_push_time": {
+    "description": "倒计时每日播报时间（HH:MM，24 小时制），非法值回退默认 09:00",
+    "type": "string",
+    "default": "09:00"
+  },
+  "habit_remind_enabled": {
+    "description": "是否开启晚间未打卡提醒",
+    "type": "bool",
+    "default": true
+  },
+  "habit_remind_time": {
+    "description": "晚间未打卡提醒时间（HH:MM，24 小时制），非法值回退默认 22:00",
+    "type": "string",
+    "default": "22:00"
   }
 }

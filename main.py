@@ -17,7 +17,7 @@ from astrbot.api.all import MessageChain
 PLUGIN_NAME = "astrbot_plugin_memo"
 PLUGIN_AUTHOR = "云晓"
 PLUGIN_DESC = "群聊备忘录与定时提醒"
-PLUGIN_VERSION = "1.1.0"
+PLUGIN_VERSION = "1.1.1"
 
 # 时间解析正则：24 小时制 HH:MM
 # 一次性提醒：`HH:MM <内容>`
