@@ -22,7 +22,7 @@ try:
 except ImportError:
     from hub_bridge import HUB_PROTOCOL_VERSION, emit_hub_event
 
-PLUGIN_VERSION = "1.3.0"
+PLUGIN_VERSION = "1.3.1"
 
 # 时间解析正则：24 小时制 HH:MM
 # 一次性提醒：`HH:MM <内容>`
@@ -210,6 +210,7 @@ class MemoPlugin(Star):
                 PLUGIN_NAME,
             )
         os.makedirs(self.data_dir, exist_ok=True)
+        # 仅只读迁移历史旧版数据至 StarTools.get_data_dir()（data/plugin_data/<plugin_name>），所有写入均严格位于标准数据目录
         _legacy_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "plugin_data",

@@ -111,7 +111,7 @@ AstrBot 群聊/私聊备忘录与定时提醒插件：记录备忘、一次性/�
 
 ## 数据
 
-存储于 `plugin_data/astrbot_plugin_memo/`：
+通过 `StarTools.get_data_dir()` 存储于 `data/plugin_data/astrbot_plugin_memo/`：
 
 - `memos.json`：各会话备忘（按会话 UMO 分组）
 - `reminders.json`：各会话提醒（按会话 UMO 分组）
