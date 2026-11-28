@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.message_components import Plain
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.api.all import MessageChain
 
 # 插件元数据
@@ -22,7 +22,7 @@ try:
 except ImportError:
     from hub_bridge import HUB_PROTOCOL_VERSION, emit_hub_event
 
-PLUGIN_VERSION = "1.2.1"
+PLUGIN_VERSION = "1.3.0"
 
 # 时间解析正则：24 小时制 HH:MM
 # 一次性提醒：`HH:MM <内容>`
@@ -200,13 +200,30 @@ class MemoPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
         self.config = config or {}
-        # 数据目录：plugin_data/astrbot_plugin_memo
-        self.data_dir = os.path.join(
+        # 数据目录：优先使用 AstrBot 官方 StarTools.get_data_dir()
+        try:
+            self.data_dir = os.path.abspath(str(StarTools.get_data_dir(PLUGIN_NAME)))
+        except Exception:
+            self.data_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "plugin_data",
+                PLUGIN_NAME,
+            )
+        os.makedirs(self.data_dir, exist_ok=True)
+        _legacy_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "plugin_data",
             PLUGIN_NAME,
         )
-        os.makedirs(self.data_dir, exist_ok=True)
+        if os.path.isdir(_legacy_dir) and os.path.abspath(_legacy_dir) != self.data_dir:
+            import shutil
+            try:
+                for _fn in os.listdir(_legacy_dir):
+                    _sp, _dp = os.path.join(_legacy_dir, _fn), os.path.join(self.data_dir, _fn)
+                    if os.path.isfile(_sp) and not os.path.exists(_dp):
+                        shutil.copy2(_sp, _dp)
+            except Exception:
+                pass
 
         # 内存数据结构：key = 会话 UMO
         self._memos: dict[str, list[dict]] = {}

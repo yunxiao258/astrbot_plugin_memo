@@ -214,10 +214,18 @@ jobs:
                   return os.path.join(tempfile.gettempdir(), "astrbot_ci_data")
           ''')
           w("api/star.py", '''
+              import pathlib, tempfile
               class Context: pass
               class Star:
                   def __init__(self, context=None, *a, **kw):
                       self.context = context
+              class StarTools:
+                  @classmethod
+                  def get_data_dir(cls, plugin_name=None):
+                      base = pathlib.Path(tempfile.gettempdir()) / "astrbot_ci_data" / "plugin_data"
+                      p = base / (plugin_name or "default_plugin")
+                      p.mkdir(parents=True, exist_ok=True)
+                      return p
               def register(*a, **kw):
                   return lambda cls: cls
           ''')
