@@ -1,18 +1,18 @@
-# -*- coding: utf-8 -*-
 """astrbot_plugin_memo 单元测试：备忘增删查、提醒解析、到期判断与去重、后台循环推送"""
+
 import os
 import sys
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from astrbot_plugin_memo.main import (  # noqa: E402
-    MemoPlugin,
-    TYPE_ONCE,
+from astrbot_plugin_memo.main import (
     TYPE_DAILY,
+    TYPE_ONCE,
     TYPE_WEEKLY,
+    MemoPlugin,
 )
 
 
@@ -45,10 +45,16 @@ class MemoPluginTestBase(unittest.TestCase):
     def setUp(self):
         self.store = MemStore()
         # 屏蔽文件读写与目录创建，全部走内存
-        self._load_p = patch.object(MemoPlugin, "_load_json",
-                                    side_effect=lambda path, dt: self.store.load(path, {}))
-        self._save_p = patch.object(MemoPlugin, "_save_json",
-                                    side_effect=lambda path, data: self.store.save(path, data))
+        self._load_p = patch.object(
+            MemoPlugin,
+            "_load_json",
+            side_effect=lambda path, dt: self.store.load(path, {}),
+        )
+        self._save_p = patch.object(
+            MemoPlugin,
+            "_save_json",
+            side_effect=lambda path, data: self.store.save(path, data),
+        )
         self._mkdir_p = patch("os.makedirs")
         self._load_p.start()
         self._save_p.start()
@@ -221,8 +227,13 @@ class TestDueWeekly(MemoPluginTestBase):
 
     def test_weekly_due_and_dedup(self):
         rem = {
-            "id": 1, "type": TYPE_WEEKLY, "hour": 18, "minute": 0,
-            "weekday": 2, "content": "周报", "last_trigger_week": None,
+            "id": 1,
+            "type": TYPE_WEEKLY,
+            "hour": 18,
+            "minute": 0,
+            "weekday": 2,
+            "content": "周报",
+            "last_trigger_week": None,
         }
         # 周三 18:00 到期（2026-08-12 是周三）
         due_now = datetime(2026, 8, 12, 18, 0, 0)

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AstrBot 群聊备忘录与定时提醒插件：记录备忘、一次性/周期定时提醒"""
 
 import asyncio
@@ -8,10 +7,10 @@ import re
 from datetime import date, datetime, timedelta
 
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.message_components import Plain
-from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.api.all import MessageChain
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.message_components import Plain
+from astrbot.api.star import Context, Star, StarTools
 
 # 插件元数据
 PLUGIN_NAME = "astrbot_plugin_memo"
@@ -22,7 +21,7 @@ try:
 except ImportError:
     from hub_bridge import HUB_PROTOCOL_VERSION, emit_hub_event
 
-PLUGIN_VERSION = "1.3.1"
+PLUGIN_VERSION = "1.3.2"
 
 # 时间解析正则：24 小时制 HH:MM
 # 一次性提醒：`HH:MM <内容>`
@@ -31,8 +30,8 @@ TIME_RE = re.compile(r"^\s*(\d{1,2}):(\d{1,2})\s+(.+?)\s*$")
 PERIOD_RE = re.compile(r"^\s*每(天|周)\s+(\d{1,2}):(\d{1,2})\s+(.+?)\s*$")
 
 # 提醒类型常量
-TYPE_ONCE = "once"      # 一次性提醒
-TYPE_DAILY = "daily"    # 每天提醒
+TYPE_ONCE = "once"  # 一次性提醒
+TYPE_DAILY = "daily"  # 每天提醒
 TYPE_WEEKLY = "weekly"  # 每周提醒
 
 # ========== 农历数据（1900-2100） ==========
@@ -40,30 +39,223 @@ TYPE_WEEKLY = "weekly"  # 每周提醒
 # 位 4 起从左到右依次表示正月到腊月是否为大月（30 天），
 # 位 16 表示闰月是否为大月。
 LUNAR_INFO = [
-    0x04bd8, 0x04ae0, 0x0a570, 0x054d5, 0x0d260, 0x0d950, 0x16554, 0x056a0, 0x09ad0, 0x055d2,  # 1900-1909
-    0x04ae0, 0x0a5b6, 0x0a4d0, 0x0d250, 0x1d255, 0x0b540, 0x0d6a0, 0x0ada2, 0x095b0, 0x14977,  # 1910-1919
-    0x04970, 0x0a4b0, 0x0b4b5, 0x06a50, 0x06d40, 0x1ab54, 0x02b60, 0x09570, 0x052f2, 0x04970,  # 1920-1929
-    0x06566, 0x0d4a0, 0x0ea50, 0x06e95, 0x05ad0, 0x02b60, 0x186e3, 0x092e0, 0x1c8d7, 0x0c950,  # 1930-1939
-    0x0d4a0, 0x1d8a6, 0x0b550, 0x056a0, 0x1a5b4, 0x025d0, 0x092d0, 0x0d2b2, 0x0a950, 0x0b557,  # 1940-1949
-    0x06ca0, 0x0b550, 0x15355, 0x04da0, 0x0a5b0, 0x14573, 0x052b0, 0x0a9a8, 0x0e950, 0x06aa0,  # 1950-1959
-    0x0aea6, 0x0ab50, 0x04b60, 0x0aae4, 0x0a570, 0x05260, 0x0f263, 0x0d950, 0x05b57, 0x056a0,  # 1960-1969
-    0x096d0, 0x04dd5, 0x04ad0, 0x0a4d0, 0x0d4d4, 0x0d250, 0x0d558, 0x0b540, 0x0b6a0, 0x195a6,  # 1970-1979
-    0x095b0, 0x049b0, 0x0a974, 0x0a4b0, 0x0b27a, 0x06a50, 0x06d40, 0x0af46, 0x0ab60, 0x09570,  # 1980-1989
-    0x04af5, 0x04970, 0x064b0, 0x074a3, 0x0ea50, 0x06b58, 0x05ac0, 0x0ab60, 0x096d5, 0x092e0,  # 1990-1999
-    0x0c960, 0x0d954, 0x0d4a0, 0x0da50, 0x07552, 0x056a0, 0x0abb7, 0x025d0, 0x092d0, 0x0cab5,  # 2000-2009
-    0x0a950, 0x0b4a0, 0x0baa4, 0x0ad50, 0x055d9, 0x04ba0, 0x0a5b0, 0x15176, 0x052b0, 0x0a930,  # 2010-2019
-    0x07954, 0x06aa0, 0x0ad50, 0x05b52, 0x04b60, 0x0a6e6, 0x0a4e0, 0x0d260, 0x0ea65, 0x0d530,  # 2020-2029
-    0x05aa0, 0x076a3, 0x096d0, 0x04afb, 0x04ad0, 0x0a4d0, 0x1d0b6, 0x0d250, 0x0d520, 0x0dd45,  # 2030-2039
-    0x0b5a0, 0x056d0, 0x055b2, 0x049b0, 0x0a577, 0x0a4b0, 0x0aa50, 0x1b255, 0x06d20, 0x0ada0,  # 2040-2049
-    0x14b63, 0x09370, 0x049f8, 0x04970, 0x064b0, 0x168a6, 0x0ea50, 0x06b20, 0x1a6c4, 0x0aae0,  # 2050-2059
-    0x0a2e0, 0x0d2e3, 0x0c960, 0x0d557, 0x0d4a0, 0x0da50, 0x05d55, 0x056a0, 0x0a6d0, 0x055d4,  # 2060-2069
-    0x052d0, 0x0a9b8, 0x0a950, 0x0b4a0, 0x0b6a6, 0x0ad50, 0x055a0, 0x0aba4, 0x0a5b0, 0x052b0,  # 2070-2079
-    0x0b273, 0x06930, 0x07337, 0x06aa0, 0x0ad50, 0x14b55, 0x04b60, 0x0a570, 0x054e4, 0x0d160,  # 2080-2089
-    0x0e968, 0x0d520, 0x0daa0, 0x16aa6, 0x056d0, 0x04ae0, 0x0a9d4, 0x0a2d0, 0x0d150, 0x0f252,  # 2090-2099
-    0x0d520,  # 2100
+    0x04BD8,
+    0x04AE0,
+    0x0A570,
+    0x054D5,
+    0x0D260,
+    0x0D950,
+    0x16554,
+    0x056A0,
+    0x09AD0,
+    0x055D2,  # 1900-1909
+    0x04AE0,
+    0x0A5B6,
+    0x0A4D0,
+    0x0D250,
+    0x1D255,
+    0x0B540,
+    0x0D6A0,
+    0x0ADA2,
+    0x095B0,
+    0x14977,  # 1910-1919
+    0x04970,
+    0x0A4B0,
+    0x0B4B5,
+    0x06A50,
+    0x06D40,
+    0x1AB54,
+    0x02B60,
+    0x09570,
+    0x052F2,
+    0x04970,  # 1920-1929
+    0x06566,
+    0x0D4A0,
+    0x0EA50,
+    0x06E95,
+    0x05AD0,
+    0x02B60,
+    0x186E3,
+    0x092E0,
+    0x1C8D7,
+    0x0C950,  # 1930-1939
+    0x0D4A0,
+    0x1D8A6,
+    0x0B550,
+    0x056A0,
+    0x1A5B4,
+    0x025D0,
+    0x092D0,
+    0x0D2B2,
+    0x0A950,
+    0x0B557,  # 1940-1949
+    0x06CA0,
+    0x0B550,
+    0x15355,
+    0x04DA0,
+    0x0A5B0,
+    0x14573,
+    0x052B0,
+    0x0A9A8,
+    0x0E950,
+    0x06AA0,  # 1950-1959
+    0x0AEA6,
+    0x0AB50,
+    0x04B60,
+    0x0AAE4,
+    0x0A570,
+    0x05260,
+    0x0F263,
+    0x0D950,
+    0x05B57,
+    0x056A0,  # 1960-1969
+    0x096D0,
+    0x04DD5,
+    0x04AD0,
+    0x0A4D0,
+    0x0D4D4,
+    0x0D250,
+    0x0D558,
+    0x0B540,
+    0x0B6A0,
+    0x195A6,  # 1970-1979
+    0x095B0,
+    0x049B0,
+    0x0A974,
+    0x0A4B0,
+    0x0B27A,
+    0x06A50,
+    0x06D40,
+    0x0AF46,
+    0x0AB60,
+    0x09570,  # 1980-1989
+    0x04AF5,
+    0x04970,
+    0x064B0,
+    0x074A3,
+    0x0EA50,
+    0x06B58,
+    0x05AC0,
+    0x0AB60,
+    0x096D5,
+    0x092E0,  # 1990-1999
+    0x0C960,
+    0x0D954,
+    0x0D4A0,
+    0x0DA50,
+    0x07552,
+    0x056A0,
+    0x0ABB7,
+    0x025D0,
+    0x092D0,
+    0x0CAB5,  # 2000-2009
+    0x0A950,
+    0x0B4A0,
+    0x0BAA4,
+    0x0AD50,
+    0x055D9,
+    0x04BA0,
+    0x0A5B0,
+    0x15176,
+    0x052B0,
+    0x0A930,  # 2010-2019
+    0x07954,
+    0x06AA0,
+    0x0AD50,
+    0x05B52,
+    0x04B60,
+    0x0A6E6,
+    0x0A4E0,
+    0x0D260,
+    0x0EA65,
+    0x0D530,  # 2020-2029
+    0x05AA0,
+    0x076A3,
+    0x096D0,
+    0x04AFB,
+    0x04AD0,
+    0x0A4D0,
+    0x1D0B6,
+    0x0D250,
+    0x0D520,
+    0x0DD45,  # 2030-2039
+    0x0B5A0,
+    0x056D0,
+    0x055B2,
+    0x049B0,
+    0x0A577,
+    0x0A4B0,
+    0x0AA50,
+    0x1B255,
+    0x06D20,
+    0x0ADA0,  # 2040-2049
+    0x14B63,
+    0x09370,
+    0x049F8,
+    0x04970,
+    0x064B0,
+    0x168A6,
+    0x0EA50,
+    0x06B20,
+    0x1A6C4,
+    0x0AAE0,  # 2050-2059
+    0x0A2E0,
+    0x0D2E3,
+    0x0C960,
+    0x0D557,
+    0x0D4A0,
+    0x0DA50,
+    0x05D55,
+    0x056A0,
+    0x0A6D0,
+    0x055D4,  # 2060-2069
+    0x052D0,
+    0x0A9B8,
+    0x0A950,
+    0x0B4A0,
+    0x0B6A6,
+    0x0AD50,
+    0x055A0,
+    0x0ABA4,
+    0x0A5B0,
+    0x052B0,  # 2070-2079
+    0x0B273,
+    0x06930,
+    0x07337,
+    0x06AA0,
+    0x0AD50,
+    0x14B55,
+    0x04B60,
+    0x0A570,
+    0x054E4,
+    0x0D160,  # 2080-2089
+    0x0E968,
+    0x0D520,
+    0x0DAA0,
+    0x16AA6,
+    0x056D0,
+    0x04AE0,
+    0x0A9D4,
+    0x0A2D0,
+    0x0D150,
+    0x0F252,  # 2090-2099
+    0x0D520,  # 2100
 ]
 
-LUNAR_MONTH_NAMES = ["正", "二", "三", "四", "五", "六", "七", "八", "九", "十", "冬", "腊"]
+LUNAR_MONTH_NAMES = [
+    "正",
+    "二",
+    "三",
+    "四",
+    "五",
+    "六",
+    "七",
+    "八",
+    "九",
+    "十",
+    "冬",
+    "腊",
+]
 
 
 def _lunar_months(year: int) -> tuple[list[int], int]:
@@ -79,8 +271,9 @@ def _lunar_months(year: int) -> tuple[list[int], int]:
     return months, leap
 
 
-def _lunar_to_solar(lunar_year: int, lunar_month: int, lunar_day: int,
-                    is_leap: bool = False) -> date | None:
+def _lunar_to_solar(
+    lunar_year: int, lunar_month: int, lunar_day: int, is_leap: bool = False
+) -> date | None:
     """农历转公历；非法输入返回 None"""
     if not 1900 <= lunar_year <= 2100:
         return None
@@ -149,8 +342,19 @@ def _cn_to_int(text: str):
     """中文数字转阿拉伯数字（支持 一~三十、十/廿 组合）；无法解析返回 None"""
     if not isinstance(text, str) or not text:
         return None
-    digits = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-              "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "廿": 20}
+    digits = {
+        "一": 1,
+        "二": 2,
+        "三": 3,
+        "四": 4,
+        "五": 5,
+        "六": 6,
+        "七": 7,
+        "八": 8,
+        "九": 9,
+        "十": 10,
+        "廿": 20,
+    }
     try:
         return int(text)
     except ValueError:
@@ -159,13 +363,13 @@ def _cn_to_int(text: str):
         return digits.get(text)
     if len(text) == 2:
         if text[0] == "十":
-            return 10 + digits.get(text[1], 0)      # 十一~十九
+            return 10 + digits.get(text[1], 0)  # 十一~十九
         if text[0] == "廿":
-            return 20 + digits.get(text[1], 0)      # 廿一~廿九
+            return 20 + digits.get(text[1], 0)  # 廿一~廿九
         if text[1] == "十":
-            return digits.get(text[0], 0) * 10      # 二十~九十
+            return digits.get(text[0], 0) * 10  # 二十~九十
         return None
-    if len(text) == 3 and text[1] == "十":           # 二十一~三十九（仅到三十）
+    if len(text) == 3 and text[1] == "十":  # 二十一~三十九（仅到三十）
         return digits.get(text[0], 0) * 10 + digits.get(text[2], 0)
     return None
 
@@ -191,7 +395,6 @@ def _valid_time(hour, minute):
     return 0 <= hour <= 23 and 0 <= minute <= 59
 
 
-@register(PLUGIN_NAME, PLUGIN_AUTHOR, PLUGIN_DESC, PLUGIN_VERSION)
 class MemoPlugin(Star):
     HUB_PROTOCOL_VERSION = HUB_PROTOCOL_VERSION
 
@@ -205,7 +408,9 @@ class MemoPlugin(Star):
             self.data_dir = os.path.abspath(str(StarTools.get_data_dir(PLUGIN_NAME)))
         except Exception:
             self.data_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                os.path.dirname(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                ),
                 "plugin_data",
                 PLUGIN_NAME,
             )
@@ -218,9 +423,13 @@ class MemoPlugin(Star):
         )
         if os.path.isdir(_legacy_dir) and os.path.abspath(_legacy_dir) != self.data_dir:
             import shutil
+
             try:
                 for _fn in os.listdir(_legacy_dir):
-                    _sp, _dp = os.path.join(_legacy_dir, _fn), os.path.join(self.data_dir, _fn)
+                    _sp, _dp = (
+                        os.path.join(_legacy_dir, _fn),
+                        os.path.join(self.data_dir, _fn),
+                    )
                     if os.path.isfile(_sp) and not os.path.exists(_dp):
                         shutil.copy2(_sp, _dp)
             except Exception:
@@ -386,7 +595,12 @@ class MemoPlugin(Star):
         items.append(item)
         self._save_memos()
         if not getattr(self, "_suppress_hub_emit", False):
-            emit_hub_event(PLUGIN_NAME, "memo.added", {"umo": umo, "id": idx, "content": content}, self.context)
+            emit_hub_event(
+                PLUGIN_NAME,
+                "memo.added",
+                {"umo": umo, "id": idx, "content": content},
+                self.context,
+            )
         return item
 
     def list_memos(self, umo: str) -> list[dict]:
@@ -507,8 +721,9 @@ class MemoPlugin(Star):
         monday = now - timedelta(days=now.weekday())
         return monday.strftime("%Y-%m-%d")
 
-    def add_reminder(self, umo: str, rtype: str, hour: int, minute: int,
-                     weekday, content: str) -> dict:
+    def add_reminder(
+        self, umo: str, rtype: str, hour: int, minute: int, weekday, content: str
+    ) -> dict:
         """新增一条提醒，返回该条数据；超限返回 None（拒绝新增）"""
         items = self._reminders.get(umo)
         if not isinstance(items, list):
@@ -534,8 +749,7 @@ class MemoPlugin(Star):
                 weekday = self._now().weekday()
             rem["weekday"] = weekday
         if rtype == TYPE_ONCE:
-            rem["next_trigger"] = self._once_next(
-                hour, minute, self._now()).isoformat()
+            rem["next_trigger"] = self._once_next(hour, minute, self._now()).isoformat()
         items.append(rem)
         self._save_reminders()
         return rem
@@ -546,7 +760,9 @@ class MemoPlugin(Star):
         if not isinstance(items, list):
             return []
         # 过滤掉已触发的一次性提醒（保持列表干净）
-        return [r for r in items if not (r.get("type") == TYPE_ONCE and r.get("triggered"))]
+        return [
+            r for r in items if not (r.get("type") == TYPE_ONCE and r.get("triggered"))
+        ]
 
     def delete_reminder(self, umo: str, rid: int) -> bool:
         """按编号删除提醒，删除成功返回 True"""
@@ -597,7 +813,9 @@ class MemoPlugin(Star):
             if month and day and 1 <= month <= 12 and 1 <= day <= 30:
                 return (m.group("name").strip(), month, day, True)
             return None
-        m = re.match(r"^(?P<name>\S+)\s+(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})\s*$", text)
+        m = re.match(
+            r"^(?P<name>\S+)\s+(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})\s*$", text
+        )
         if m:
             month, day = int(m.group("m")), int(m.group("d"))
             if 1 <= month <= 12 and 1 <= day <= 31:
@@ -614,8 +832,9 @@ class MemoPlugin(Star):
                 return (m.group("name").strip(), month, day, False)
         return None
 
-    def add_birthday(self, umo: str, name: str, month: int, day: int,
-                     lunar: bool) -> dict:
+    def add_birthday(
+        self, umo: str, name: str, month: int, day: int, lunar: bool
+    ) -> dict:
         """新增一条生日记录，返回该条数据"""
         items = self._birthday_list(umo)
         idx = self._next_id(items)
@@ -626,7 +845,7 @@ class MemoPlugin(Star):
             "day": day,
             "lunar": bool(lunar),
             "time": self._fmt_time(self._now()),
-            "last_trigger_year": None,   # 生日当天推送去重
+            "last_trigger_year": None,  # 生日当天推送去重
             "last_announce_year": None,  # 提前预告推送去重
         }
         items.append(item)
@@ -828,8 +1047,28 @@ class MemoPlugin(Star):
         if action == "list_data":
             umo = str(p.get("umo", "")).strip()
             if umo:
-                return {"ok": True, "data": {"memos": self.list_memos(umo), "reminders": self.list_reminders(umo), "habits": self.list_habits(umo)}}
-            return {"ok": True, "data": {"sessions": sorted(set(self._memos.keys()) | set(self._reminders.keys())), "memos_total": sum(len(v) for v in self._memos.values() if isinstance(v, list)), "reminders_total": sum(len(v) for v in self._reminders.values() if isinstance(v, list))}}
+                return {
+                    "ok": True,
+                    "data": {
+                        "memos": self.list_memos(umo),
+                        "reminders": self.list_reminders(umo),
+                        "habits": self.list_habits(umo),
+                    },
+                }
+            return {
+                "ok": True,
+                "data": {
+                    "sessions": sorted(
+                        set(self._memos.keys()) | set(self._reminders.keys())
+                    ),
+                    "memos_total": sum(
+                        len(v) for v in self._memos.values() if isinstance(v, list)
+                    ),
+                    "reminders_total": sum(
+                        len(v) for v in self._reminders.values() if isinstance(v, list)
+                    ),
+                },
+            }
         if action == "add_memo":
             umo = str(p.get("umo", "")).strip()
             content = str(p.get("content", "")).strip()
@@ -852,7 +1091,10 @@ class MemoPlugin(Star):
                 return {"ok": False, "error": "缺少 umo 或 spec"}
             parsed = self.parse_reminder(spec)
             if not parsed:
-                return {"ok": False, "error": "解析提醒格式失败（示例：每天 09:00 打卡）"}
+                return {
+                    "ok": False,
+                    "error": "解析提醒格式失败（示例：每天 09:00 打卡）",
+                }
             rtype, hour, minute, weekday, content = parsed
             item = self.add_reminder(umo, rtype, hour, minute, weekday, content)
             if item is None:
@@ -926,7 +1168,10 @@ class MemoPlugin(Star):
                 continue
             pending = []
             for item in items:
-                if item.get("last_check") != today and item.get("last_remind_date") != today:
+                if (
+                    item.get("last_check") != today
+                    and item.get("last_remind_date") != today
+                ):
                     pending.append(item)
             if not pending:
                 continue
@@ -1059,7 +1304,12 @@ class MemoPlugin(Star):
                     remain.append(rem)
                     continue
                 pushed.append((umo, rem))
-                emit_hub_event(PLUGIN_NAME, "memo.reminder_triggered", {"umo": umo, "content": rem.get("content", ""), "type": rtype}, self.context)
+                emit_hub_event(
+                    PLUGIN_NAME,
+                    "memo.reminder_triggered",
+                    {"umo": umo, "content": rem.get("content", ""), "type": rtype},
+                    self.context,
+                )
                 if rtype == TYPE_ONCE:
                     # 一次性提醒触发后即删除
                     continue
@@ -1091,7 +1341,9 @@ class MemoPlugin(Star):
             wd = _safe_int(rem.get("weekday"), 0)
             names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
             wname = names[wd] if 0 <= wd < 7 else str(wd)
-            return f"⏰ 每周{wname}提醒 {hour:02d}:{minute:02d}：{rem.get('content', '')}"
+            return (
+                f"⏰ 每周{wname}提醒 {hour:02d}:{minute:02d}：{rem.get('content', '')}"
+            )
         return f"⏰ 提醒：{rem.get('content', '')}"
 
     async def _push(self, umo: str, text: str) -> bool:
@@ -1112,7 +1364,7 @@ class MemoPlugin(Star):
         """处理 /备忘 系列指令：新增、列表、删除"""
         umo = str(event.session)
         text = event.message_str.strip()
-        rest = text[len("备忘"):].strip()
+        rest = text[len("备忘") :].strip()
 
         if not rest:
             return self._reply(
@@ -1149,7 +1401,7 @@ class MemoPlugin(Star):
         """处理 /提醒 系列指令：新增（一次性/周期）、列表、删除"""
         umo = str(event.session)
         text = event.message_str.strip()
-        rest = text[len("提醒"):].strip()
+        rest = text[len("提醒") :].strip()
 
         if not rest:
             return self._reply(
@@ -1182,14 +1434,19 @@ class MemoPlugin(Star):
         rtype, hour, minute, _weekday, content = parsed
         rem = self.add_reminder(umo, rtype, hour, minute, _weekday, content)
         if rem is None:
-            return self._reply(event, f"当前会话提醒数量已达上限（{self._max_reminders()}），请先删除部分提醒。")
+            return self._reply(
+                event,
+                f"当前会话提醒数量已达上限（{self._max_reminders()}），请先删除部分提醒。",
+            )
         label = self._reminder_label(rem)
         return self._reply(event, f"已设置{label}提醒 #{rem['id']}：{rem['content']}")
 
     def _reminder_label(self, rem: dict) -> str:
         """根据提醒类型生成中文标签"""
         rtype = rem.get("type")
-        hh = f"{_safe_int(rem.get('hour'), 0):02d}:{_safe_int(rem.get('minute'), 0):02d}"
+        hh = (
+            f"{_safe_int(rem.get('hour'), 0):02d}:{_safe_int(rem.get('minute'), 0):02d}"
+        )
         if rtype == TYPE_ONCE:
             return f"一次性（{hh}）"
         if rtype == TYPE_DAILY:
@@ -1218,7 +1475,7 @@ class MemoPlugin(Star):
         """处理 /生日 系列指令：新增、列表、删除"""
         umo = str(event.session)
         text = event.message_str.strip()
-        rest = text[len("生日"):].strip()
+        rest = text[len("生日") :].strip()
 
         if not rest:
             return self._reply(
@@ -1242,9 +1499,7 @@ class MemoPlugin(Star):
         if parsed is None:
             return self._reply(
                 event,
-                "格式无法解析。示例：\n"
-                "/生日 小明 2026-08-18\n"
-                "/生日 小红 农历 八月十五",
+                "格式无法解析。示例：\n/生日 小明 2026-08-18\n/生日 小红 农历 八月十五",
             )
         name, month, day, lunar = parsed
         self.add_birthday(umo, name, month, day, lunar)
@@ -1264,7 +1519,9 @@ class MemoPlugin(Star):
             if it.get("lunar"):
                 label = f"农历{_lunar_month_name(_safe_int(it.get('month'), 1))}{_safe_int(it.get('day'), 1)}日"
             else:
-                label = f"{_safe_int(it.get('month'), 1)}月{_safe_int(it.get('day'), 1)}日"
+                label = (
+                    f"{_safe_int(it.get('month'), 1)}月{_safe_int(it.get('day'), 1)}日"
+                )
             lines.append(f"#{it['id']} {it.get('name', '')}（{label}）")
         return "\n".join(lines)
 
@@ -1275,7 +1532,7 @@ class MemoPlugin(Star):
         """处理 /倒计时 系列指令：新增、列表、删除"""
         umo = str(event.session)
         text = event.message_str.strip()
-        rest = text[len("倒计时"):].strip()
+        rest = text[len("倒计时") :].strip()
 
         if not rest:
             return self._reply(
@@ -1307,8 +1564,13 @@ class MemoPlugin(Star):
         item = self.add_countdown(umo, name, target)
         days = (target - self._now().date()).days
         if days < 0:
-            return self._reply(event, f"已创建倒计时 #{item['id']}：{name}（目标 {target}，已过期 {abs(days)} 天）")
-        return self._reply(event, f"已创建倒计时 #{item['id']}：{name}（距目标还有 {days} 天）")
+            return self._reply(
+                event,
+                f"已创建倒计时 #{item['id']}：{name}（目标 {target}，已过期 {abs(days)} 天）",
+            )
+        return self._reply(
+            event, f"已创建倒计时 #{item['id']}：{name}（距目标还有 {days} 天）"
+        )
 
     def _render_countdown_list(self, umo: str) -> str:
         """渲染当前会话倒计时列表文案"""
@@ -1326,7 +1588,9 @@ class MemoPlugin(Star):
                 lines.append(f"#{it['id']} {it.get('name', '')}（已到期）")
             else:
                 days = (target - today).days
-                lines.append(f"#{it['id']} {it.get('name', '')}（还剩 {max(days, 0)} 天，{target}）")
+                lines.append(
+                    f"#{it['id']} {it.get('name', '')}（还剩 {max(days, 0)} 天，{target}）"
+                )
         return "\n".join(lines)
 
     # ========== 习惯打卡指令 ==========
@@ -1336,7 +1600,7 @@ class MemoPlugin(Star):
         """处理 /打卡 系列指令：新增、打卡、列表、删除"""
         umo = str(event.session)
         text = event.message_str.strip()
-        rest = text[len("打卡"):].strip()
+        rest = text[len("打卡") :].strip()
 
         if not rest:
             return self._reply(
@@ -1358,10 +1622,15 @@ class MemoPlugin(Star):
         m = re.match(r"^加\s+(.+)$", rest)
         if m:
             item = self.add_habit(umo, m.group(1).strip())
-            return self._reply(event, f"已创建习惯 #{item['id']}：{item['name']}，回复 /打卡 {item['name']} 完成打卡")
+            return self._reply(
+                event,
+                f"已创建习惯 #{item['id']}：{item['name']}，回复 /打卡 {item['name']} 完成打卡",
+            )
         result = self.check_habit(umo, rest)
         if result is None:
-            return self._reply(event, f"未找到习惯「{rest}」。可用 /打卡 加 <名称> 创建。")
+            return self._reply(
+                event, f"未找到习惯「{rest}」。可用 /打卡 加 <名称> 创建。"
+            )
         item, first = result
         if not first:
             return self._reply(event, f"「{item['name']}」今天已打卡，明天再来吧！")
@@ -1393,7 +1662,7 @@ class MemoPlugin(Star):
         """处理 /稍后 指令：自然语言临时提醒，如 `/稍后 30分钟后 取快递`"""
         umo = str(event.session)
         text = event.message_str.strip()
-        rest = text[len("稍后"):].strip()
+        rest = text[len("稍后") :].strip()
         parsed = self.parse_later_reminder(rest)
         if parsed is None:
             return self._reply(
@@ -1404,7 +1673,10 @@ class MemoPlugin(Star):
         hour, minute, content = parsed
         rem = self.add_reminder(umo, TYPE_ONCE, hour, minute, None, content)
         if rem is None:
-            return self._reply(event, f"当前会话提醒数量已达上限（{self._max_reminders()}），请先删除部分提醒。")
+            return self._reply(
+                event,
+                f"当前会话提醒数量已达上限（{self._max_reminders()}），请先删除部分提醒。",
+            )
         return self._reply(
             event,
             f"⏰ 已设置稍后提醒 #{rem['id']}：{content}（{hour:02d}:{minute:02d} 触发）",

@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 """astrbot_plugin_memo 新功能测试：生日（含农历）、倒计时、习惯打卡、稍后提醒"""
+
 import os
 import sys
 import unittest
@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from astrbot_plugin_memo.main import (  # noqa: E402
+from astrbot_plugin_memo.main import (
     MemoPlugin,
+    _lunar_month_name,
     _lunar_to_solar,
     _solar_to_lunar,
-    _lunar_month_name,
 )
 
 
@@ -44,10 +44,16 @@ class MemoExtraTestBase(unittest.TestCase):
 
     def setUp(self):
         self.store = MemStore()
-        self._load_p = patch.object(MemoPlugin, "_load_json",
-                                    side_effect=lambda path, dt: self.store.load(path, {}))
-        self._save_p = patch.object(MemoPlugin, "_save_json",
-                                    side_effect=lambda path, data: self.store.save(path, data))
+        self._load_p = patch.object(
+            MemoPlugin,
+            "_load_json",
+            side_effect=lambda path, dt: self.store.load(path, {}),
+        )
+        self._save_p = patch.object(
+            MemoPlugin,
+            "_save_json",
+            side_effect=lambda path, data: self.store.save(path, data),
+        )
         self._mkdir_p = patch("os.makedirs")
         self._load_p.start()
         self._save_p.start()
@@ -83,12 +89,16 @@ class TestLunar(MemoExtraTestBase):
         self.assertEqual(_solar_to_lunar(2026, 9, 25), (2026, 8, 15, False))
 
     def test_lunar_to_solar_known(self):
-        self.assertEqual(_lunar_to_solar(2026, 1, 1), __import__("datetime").date(2026, 2, 17))
-        self.assertEqual(_lunar_to_solar(2026, 8, 15), __import__("datetime").date(2026, 9, 25))
+        self.assertEqual(
+            _lunar_to_solar(2026, 1, 1), __import__("datetime").date(2026, 2, 17)
+        )
+        self.assertEqual(
+            _lunar_to_solar(2026, 8, 15), __import__("datetime").date(2026, 9, 25)
+        )
 
     def test_round_trip(self):
-        from datetime import date
         import random
+        from datetime import date
 
         random.seed(1)
         for _ in range(50):
@@ -187,7 +197,9 @@ class TestCountdown(MemoExtraTestBase):
     UMO = "default:GroupMessage:123"
 
     def test_crud(self):
-        self.p.add_countdown(self.UMO, "项目上线", __import__("datetime").date(2026, 12, 31))
+        self.p.add_countdown(
+            self.UMO, "项目上线", __import__("datetime").date(2026, 12, 31)
+        )
         items = self.p.list_countdowns(self.UMO)
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["target"], "2026-12-31")
@@ -195,13 +207,17 @@ class TestCountdown(MemoExtraTestBase):
         self.assertFalse(self.p.delete_countdown(self.UMO, 1))
 
     def test_daily_report_before_time(self):
-        self.p.add_countdown(self.UMO, "项目上线", __import__("datetime").date(2026, 12, 31))
+        self.p.add_countdown(
+            self.UMO, "项目上线", __import__("datetime").date(2026, 12, 31)
+        )
         # 未到 09:00 不播报
         pushed = self._run(self.p._check_countdowns(datetime(2026, 8, 18, 8, 0, 0)))
         self.assertEqual(len(pushed), 0)
 
     def test_daily_report_after_time(self):
-        self.p.add_countdown(self.UMO, "项目上线", __import__("datetime").date(2026, 12, 31))
+        self.p.add_countdown(
+            self.UMO, "项目上线", __import__("datetime").date(2026, 12, 31)
+        )
         pushed = self._run(self.p._check_countdowns(datetime(2026, 8, 18, 9, 0, 0)))
         self.assertEqual(len(pushed), 1)
         self.assertIn("135", self.ctx.sent[0][1].__str__())
@@ -210,7 +226,9 @@ class TestCountdown(MemoExtraTestBase):
         self.assertEqual(len(pushed2), 0)
 
     def test_due_marks_done(self):
-        self.p.add_countdown(self.UMO, "项目上线", __import__("datetime").date(2026, 8, 18))
+        self.p.add_countdown(
+            self.UMO, "项目上线", __import__("datetime").date(2026, 8, 18)
+        )
         pushed = self._run(self.p._check_countdowns(datetime(2026, 8, 18, 9, 0, 0)))
         self.assertEqual(len(pushed), 1)
         self.assertIn("到期", self.ctx.sent[0][1].__str__())
@@ -363,7 +381,9 @@ class TestIntegration(MemoExtraTestBase):
         # 生日（今天 8/18）
         self.p.add_birthday(self.UMO, "小明", 8, 18, False)
         # 倒计时（未到期）
-        self.p.add_countdown(self.UMO, "上线", __import__("datetime").date(2026, 12, 31))
+        self.p.add_countdown(
+            self.UMO, "上线", __import__("datetime").date(2026, 12, 31)
+        )
         # 习惯（未打卡）
         self.p.add_habit(self.UMO, "读书")
         pushed = self._run(self.p._check_and_push())
